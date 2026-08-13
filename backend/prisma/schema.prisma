@@ -1,0 +1,151 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum PurchaseStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+model User {
+  id                String         @id @default(cuid())
+  email             String         @unique
+  password          String
+  name              String
+  phone             String?
+  role              Role           @default(USER)
+  blocked           Boolean        @default(false)
+  resetToken        String?
+  resetTokenExpiry  DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  purchases         Purchase[]
+  userLicenses      UserLicense[]
+  conversations     WhatsAppConversation[]
+
+  @@map("users")
+}
+
+model SpecializationGrade {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  order       Int       @unique
+  color       String    @default("#6366f1")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  licenses    License[]
+
+  @@map("specialization_grades")
+}
+
+model License {
+  id            String              @id @default(cuid())
+  name          String
+  description   String
+  price         Float
+  durationDays  Int                 // Vigencia en días
+  benefits      String[]            // Array de beneficios/competencias
+  requirements  String?             // Descripción de requisitos
+  syllabus      String?             // Temario en formato texto/markdown
+  active        Boolean             @default(true)
+  imageUrl      String?
+  gradeId       String
+  grade         SpecializationGrade @relation(fields: [gradeId], references: [id])
+  prerequisiteId String?            // Licencia requerida previa
+  prerequisite  License?            @relation("LicensePrerequisite", fields: [prerequisiteId], references: [id])
+  dependents    License[]           @relation("LicensePrerequisite")
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  purchases     Purchase[]
+  userLicenses  UserLicense[]
+
+  @@map("licenses")
+}
+
+model Purchase {
+  id                String         @id @default(cuid())
+  userId            String
+  user              User           @relation(fields: [userId], references: [id])
+  licenseId         String
+  license           License        @relation(fields: [licenseId], references: [id])
+  amount            Float
+  currency          String         @default("usd")
+  status            PurchaseStatus @default(PENDING)
+  stripePaymentId   String?
+  stripeSessionId   String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  userLicense       UserLicense?
+
+  @@map("purchases")
+}
+
+model UserLicense {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  licenseId    String
+  license      License   @relation(fields: [licenseId], references: [id])
+  purchaseId   String    @unique
+  purchase     Purchase  @relation(fields: [purchaseId], references: [id])
+  code         String    @unique  // Código único de verificación
+  issuedAt     DateTime  @default(now())
+  expiresAt    DateTime
+  pdfUrl       String?
+  reminderSent Boolean   @default(false)  // Para recordatorio de vencimiento
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("user_licenses")
+}
+
+model WhatsAppConversation {
+  id        String              @id @default(cuid())
+  userId    String?
+  user      User?               @relation(fields: [userId], references: [id])
+  phone     String              // Número de teléfono del contacto
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  messages  WhatsAppMessage[]
+
+  @@map("whatsapp_conversations")
+}
+
+model WhatsAppMessage {
+  id             String               @id @default(cuid())
+  conversationId String
+  conversation   WhatsAppConversation @relation(fields: [conversationId], references: [id])
+  body           String
+  direction      MessageDirection
+  twilioSid      String?
+  timestamp      DateTime             @default(now())
+  createdAt      DateTime             @default(now())
+
+  @@map("whatsapp_messages")
+}

@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,141 +8,125 @@ datasource db {
 }
 
 enum Role {
-  USER
-  ADMIN
+  admin
+  student
 }
 
-enum PurchaseStatus {
-  PENDING
-  COMPLETED
-  FAILED
-  REFUNDED
+enum EnrollmentStatus {
+  pendiente
+  pagado
+  en_curso
+  finalizado
 }
 
-enum MessageDirection {
-  INBOUND
-  OUTBOUND
+enum PaymentStatus {
+  pendiente
+  aprobado
+  rechazado
+  reembolsado
 }
 
 model User {
-  id                String         @id @default(cuid())
-  email             String         @unique
-  password          String
-  name              String
-  phone             String?
-  role              Role           @default(USER)
-  blocked           Boolean        @default(false)
-  resetToken        String?
-  resetTokenExpiry  DateTime?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-
-  purchases         Purchase[]
-  userLicenses      UserLicense[]
-  conversations     WhatsAppConversation[]
+  id                 String       @id @default(uuid())
+  nombre             String
+  email              String       @unique
+  password           String
+  telefono           String?
+  documentoIdentidad String?      @unique @map("documento_identidad")
+  role               Role         @default(student)
+  activo             Boolean      @default(true)
+  fechaRegistro      DateTime     @default(now()) @map("fecha_registro")
+  fotoPerfilUrl      String?      @map("foto_perfil_url")
+  resetToken         String?      @map("reset_token")
+  resetTokenExpires  DateTime?    @map("reset_token_expires")
+  enrollments        Enrollment[]
 
   @@map("users")
 }
 
-model SpecializationGrade {
-  id          String    @id @default(cuid())
-  name        String    @unique
-  description String?
-  order       Int       @unique
-  color       String    @default("#6366f1")
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  licenses    License[]
-
-  @@map("specialization_grades")
-}
-
 model License {
-  id            String              @id @default(cuid())
-  name          String
-  description   String
-  price         Float
-  durationDays  Int                 // Vigencia en días
-  benefits      String[]            // Array de beneficios/competencias
-  requirements  String?             // Descripción de requisitos
-  syllabus      String?             // Temario en formato texto/markdown
-  active        Boolean             @default(true)
-  imageUrl      String?
-  gradeId       String
-  grade         SpecializationGrade @relation(fields: [gradeId], references: [id])
-  prerequisiteId String?            // Licencia requerida previa
-  prerequisite  License?            @relation("LicensePrerequisite", fields: [prerequisiteId], references: [id])
-  dependents    License[]           @relation("LicensePrerequisite")
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-
-  purchases     Purchase[]
-  userLicenses  UserLicense[]
+  id                    String       @id @default(uuid())
+  codigo                String       @unique // A2, B1, C1, RC1, RC2
+  nombre                String
+  descripcion           String
+  precioCurso           Int          @map("precio_curso")
+  precioMedico          Int          @map("precio_medico")
+  precioLicenciaTransito Int         @map("precio_licencia_transito")
+  precioTotal           Int          @map("precio_total")
+  horasTeoria           Int          @map("horas_teoria")
+  horasTaller           Int          @map("horas_taller")
+  horasPractica         Int          @map("horas_practica")
+  horasTotal            Int          @map("horas_total")
+  imagenUrl             String?      @map("imagen_url")
+  requisitos            String?
+  activo                Boolean      @default(true)
+  combos                ComboLicense[]
+  enrollments           Enrollment[]
 
   @@map("licenses")
 }
 
-model Purchase {
-  id                String         @id @default(cuid())
-  userId            String
-  user              User           @relation(fields: [userId], references: [id])
-  licenseId         String
-  license           License        @relation(fields: [licenseId], references: [id])
-  amount            Float
-  currency          String         @default("usd")
-  status            PurchaseStatus @default(PENDING)
-  stripePaymentId   String?
-  stripeSessionId   String?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+model Combo {
+  id            String         @id @default(uuid())
+  nombre        String
+  descripcion   String
+  precioCurso   Int            @map("precio_curso")
+  precioMedico  Int            @map("precio_medico")
+  precioTransito Int           @map("precio_transito")
+  precioTotal   Int            @map("precio_total")
+  imagenUrl     String?        @map("imagen_url")
+  activo        Boolean        @default(true)
+  licenses      ComboLicense[]
+  enrollments   Enrollment[]
 
-  userLicense       UserLicense?
-
-  @@map("purchases")
+  @@map("combos")
 }
 
-model UserLicense {
-  id           String    @id @default(cuid())
-  userId       String
-  user         User      @relation(fields: [userId], references: [id])
-  licenseId    String
-  license      License   @relation(fields: [licenseId], references: [id])
-  purchaseId   String    @unique
-  purchase     Purchase  @relation(fields: [purchaseId], references: [id])
-  code         String    @unique  // Código único de verificación
-  issuedAt     DateTime  @default(now())
-  expiresAt    DateTime
-  pdfUrl       String?
-  reminderSent Boolean   @default(false)  // Para recordatorio de vencimiento
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+model ComboLicense {
+  comboId   String  @map("combo_id")
+  licenseId String  @map("license_id")
+  combo     Combo   @relation(fields: [comboId], references: [id], onDelete: Cascade)
+  license   License @relation(fields: [licenseId], references: [id], onDelete: Cascade)
 
-  @@map("user_licenses")
+  @@id([comboId, licenseId])
+  @@map("combo_licenses")
 }
 
-model WhatsAppConversation {
-  id        String              @id @default(cuid())
-  userId    String?
-  user      User?               @relation(fields: [userId], references: [id])
-  phone     String              // Número de teléfono del contacto
-  createdAt DateTime            @default(now())
-  updatedAt DateTime            @updatedAt
+model AdditionalService {
+  id          String  @id @default(uuid())
+  nombre      String
+  descripcion String
+  activo      Boolean @default(true)
 
-  messages  WhatsAppMessage[]
-
-  @@map("whatsapp_conversations")
+  @@map("additional_services")
 }
 
-model WhatsAppMessage {
-  id             String               @id @default(cuid())
-  conversationId String
-  conversation   WhatsAppConversation @relation(fields: [conversationId], references: [id])
-  body           String
-  direction      MessageDirection
-  twilioSid      String?
-  timestamp      DateTime             @default(now())
-  createdAt      DateTime             @default(now())
+model Enrollment {
+  id                 String           @id @default(uuid())
+  userId             String           @map("user_id")
+  licenseId          String?          @map("license_id")
+  comboId            String?          @map("combo_id")
+  estado             EnrollmentStatus @default(pendiente)
+  fechaInscripcion   DateTime         @default(now()) @map("fecha_inscripcion")
+  licenciaEmitidaUrl String?          @map("licencia_emitida_url")
+  codigoVerificacion String           @unique @map("codigo_verificacion")
+  user               User             @relation(fields: [userId], references: [id])
+  license            License?         @relation(fields: [licenseId], references: [id])
+  combo              Combo?           @relation(fields: [comboId], references: [id])
+  payments           Payment[]
 
-  @@map("whatsapp_messages")
+  @@map("enrollments")
+}
+
+model Payment {
+  id                    String        @id @default(uuid())
+  enrollmentId          String        @map("enrollment_id")
+  monto                 Int
+  metodoPago            String        @map("metodo_pago")
+  estado                PaymentStatus @default(pendiente)
+  referenciaTransaccion String?       @map("referencia_transaccion")
+  fecha                 DateTime      @default(now())
+  enrollment            Enrollment    @relation(fields: [enrollmentId], references: [id])
+
+  @@map("payments")
 }

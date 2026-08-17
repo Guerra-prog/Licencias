@@ -1,122 +1,113 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import Stripe from 'stripe';
-import { v4 as uuidv4 } from 'uuid';
+import { getStripe } from '../config/stripe';
+import { env } from '../config/env';
 import { prisma } from '../utils/prisma';
-import { generateLicensePDF } from '../services/pdf.service';
-import { sendPurchaseConfirmationEmail } from '../services/email.service';
-import { sendPurchaseWhatsApp } from '../services/whatsapp.service';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-04-10',
-});
-
-export const stripeWebhook = async (req: Request, res: Response): Promise<void> => {
-  const sig = req.headers['stripe-signature'] as string;
-
-  let event: Stripe.Event;
-
+export async function checkout(req: Request, res: Response, next: NextFunction) {
   try {
-    event = stripe.webhooks.constructEvent(
-      req.body, // raw Buffer
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET!
-    );
+    const { enrollmentId } = req.body;
+
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { id: enrollmentId },
+      include: { license: true, combo: true },
+    });
+    if (!enrollment) {
+      return res.status(404).json({ error: 'Inscripción no encontrada' });
+    }
+    if (enrollment.userId !== req.user!.userId) {
+      return res.status(403).json({ error: 'La inscripción no pertenece al usuario autenticado' });
+    }
+    if (enrollment.estado !== 'pendiente') {
+      return res.status(400).json({ error: 'La inscripción ya fue pagada o está en curso' });
+    }
+
+    const producto = enrollment.license || enrollment.combo;
+    if (!producto) {
+      return res.status(400).json({ error: 'La inscripción no tiene producto asociado' });
+    }
+
+    const session = await getStripe().checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'cop',
+            product_data: { name: producto.nombre },
+            // Stripe usa centavos para COP
+            unit_amount: producto.precioTotal * 100,
+          },
+          quantity: 1,
+        },
+      ],
+      metadata: { enrollmentId: enrollment.id },
+      success_url: `${env.frontendUrl}/pago/exito?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${env.frontendUrl}/pago/cancelado`,
+    });
+
+    await prisma.payment.create({
+      data: {
+        enrollmentId: enrollment.id,
+        monto: producto.precioTotal,
+        metodoPago: 'stripe',
+        estado: 'pendiente',
+        referenciaTransaccion: session.id,
+      },
+    });
+
+    return res.json({ checkoutUrl: session.url, sessionId: session.id });
   } catch (err) {
-    console.error('[Stripe Webhook] Signature verification failed:', err);
-    res.status(400).json({ error: 'Webhook signature invalid' });
-    return;
+    return next(err);
   }
+}
 
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object as Stripe.CheckoutSession;
-
-    await handleSuccessfulPayment(session);
-  }
-
-  res.json({ received: true });
-};
-
-async function handleSuccessfulPayment(session: Stripe.CheckoutSession): Promise<void> {
-  const { userId, licenseId } = session.metadata as { userId: string; licenseId: string };
-
+export async function webhook(req: Request, res: Response, next: NextFunction) {
   try {
-    // Actualizar la compra a COMPLETED
-    const purchase = await prisma.purchase.updateMany({
-      where: { stripeSessionId: session.id, status: 'PENDING' },
-      data: {
-        status: 'COMPLETED',
-        stripePaymentId: session.payment_intent as string,
-      },
-    });
-
-    if (purchase.count === 0) {
-      console.warn(`[Stripe] No pending purchase found for session ${session.id}`);
-      return;
+    const signature = req.headers['stripe-signature'];
+    if (!signature) {
+      return res.status(400).json({ error: 'Falta la firma de Stripe' });
     }
 
-    const purchaseRecord = await prisma.purchase.findFirst({
-      where: { stripeSessionId: session.id },
-    });
-
-    if (!purchaseRecord) return;
-
-    // Cargar datos de licencia y usuario
-    const [user, license] = await Promise.all([
-      prisma.user.findUnique({ where: { id: userId } }),
-      prisma.license.findUnique({
-        where: { id: licenseId },
-        include: { grade: true },
-      }),
-    ]);
-
-    if (!user || !license) return;
-
-    // Generar código único
-    const code = `LIC-${uuidv4().substring(0, 8).toUpperCase()}`;
-    const issuedAt = new Date();
-    const expiresAt = new Date(issuedAt.getTime() + license.durationDays * 24 * 60 * 60 * 1000);
-
-    // Generar PDF
-    const pdfBuffer = await generateLicensePDF({
-      userName: user.name,
-      userEmail: user.email,
-      licenseName: license.name,
-      gradeLevel: license.grade.name,
-      gradeColor: license.grade.color,
-      code,
-      issuedAt,
-      expiresAt,
-    });
-
-    // Crear UserLicense
-    await prisma.userLicense.create({
-      data: {
-        userId,
-        licenseId,
-        purchaseId: purchaseRecord.id,
-        code,
-        issuedAt,
-        expiresAt,
-      },
-    });
-
-    // Enviar email con PDF
-    await sendPurchaseConfirmationEmail(
-      user.email,
-      user.name,
-      code,
-      license.name,
-      expiresAt,
-      pdfBuffer
-    );
-
-    // Enviar WhatsApp si tiene teléfono
-    if (user.phone) {
-      await sendPurchaseWhatsApp(user.phone, user.name, license.name, code, expiresAt);
+    let event: Stripe.Event;
+    try {
+      event = getStripe().webhooks.constructEvent(
+        req.body,
+        signature,
+        env.stripe.webhookSecret
+      );
+    } catch {
+      return res.status(400).json({ error: 'Firma de webhook inválida' });
     }
 
-    console.log(`[Stripe] ✅ Licencia emitida: ${code} para usuario ${userId}`);
-  } catch (error) {
-    console.error('[Stripe] Error procesando pago:', error);
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const enrollmentId = session.metadata?.enrollmentId;
+
+      if (enrollmentId) {
+        await prisma.$transaction([
+          prisma.payment.updateMany({
+            where: { referenciaTransaccion: session.id },
+            data: { estado: 'aprobado' },
+          }),
+          prisma.enrollment.update({
+            where: { id: enrollmentId },
+            data: { estado: 'pagado' },
+          }),
+        ]);
+      }
+    }
+
+    if (event.type === 'checkout.session.expired') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      await prisma.payment.updateMany({
+        where: { referenciaTransaccion: session.id },
+        data: { estado: 'rechazado' },
+      });
+    }
+
+    return res.json({ received: true });
+  } catch (err) {
+    return next(err);
   }
 }

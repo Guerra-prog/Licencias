@@ -1,99 +1,44 @@
-import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import rateLimit from 'express-rate-limit';
-
-import authRoutes from './routes/auth.routes';
-import userRoutes from './routes/user.routes';
-import licenseRoutes from './routes/license.routes';
-import gradeRoutes from './routes/grade.routes';
-import orderRoutes from './routes/order.routes';
-import paymentRoutes from './routes/payment.routes';
-import adminRoutes from './routes/admin.routes';
-import webhookRoutes from './routes/webhook.routes';
-import verifyRoutes from './routes/verify.routes';
-
+import { env } from './config/env';
 import { errorHandler } from './middleware/errorHandler';
+import authRoutes from './routes/auth.routes';
+import catalogRoutes from './routes/catalog.routes';
+import adminRoutes from './routes/admin.routes';
+import enrollmentRoutes from './routes/enrollment.routes';
+import paymentRoutes from './routes/payment.routes';
+import uploadRoutes from './routes/upload.routes';
+import { webhook } from './controllers/payment.controller';
+import { verifyEnrollment } from './controllers/enrollment.controller';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
 
-// =============================================
-// SECURITY MIDDLEWARE
-// =============================================
 app.use(helmet());
-app.use(
-  cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-    credentials: true,
-  })
-);
+app.use(cors({ origin: env.frontendUrl, credentials: true }));
+app.use(morgan(env.nodeEnv === 'development' ? 'dev' : 'combined'));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 100,
-  message: { error: 'Demasiadas solicitudes, intenta más tarde.' },
-});
-app.use('/api/', limiter);
+// El webhook de Stripe necesita el body sin parsear para verificar la firma
+app.post('/payments/webhook', express.raw({ type: 'application/json' }), webhook);
 
-// =============================================
-// STRIPE WEBHOOK — debe ir ANTES de express.json()
-// porque Stripe necesita el raw body
-// =============================================
-app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
-app.use('/api/webhook/whatsapp', express.urlencoded({ extended: false }));
+app.use(express.json({ limit: '1mb' }));
 
-// =============================================
-// BODY PARSING
-// =============================================
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.get('/health', (_req, res) => res.json({ status: 'ok', servicio: 'CEA AMC API' }));
 
-// =============================================
-// LOGGING
-// =============================================
-if (process.env.NODE_ENV !== 'test') {
-  app.use(morgan('dev'));
-}
+app.use('/auth', authRoutes);
+app.use('/', catalogRoutes);
+app.use('/admin', adminRoutes);
+app.use('/enrollments', enrollmentRoutes);
+app.use('/payments', paymentRoutes);
+app.use('/uploads', uploadRoutes);
+app.get('/verify/:codigoVerificacion', verifyEnrollment);
 
-// =============================================
-// ROUTES
-// =============================================
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/licenses', licenseRoutes);
-app.use('/api/grades', gradeRoutes);
-app.use('/api/orders', orderRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/webhook', webhookRoutes);
-app.use('/api/verify', verifyRoutes);
-
-// Health check
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// 404 handler
-app.use((_req, res) => {
-  res.status(404).json({ error: 'Ruta no encontrada' });
-});
-
-// =============================================
-// ERROR HANDLER (debe ser el último middleware)
-// =============================================
+app.use((_req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
 app.use(errorHandler);
 
-// =============================================
-// START SERVER
-// =============================================
-app.listen(PORT, () => {
-  console.log(`\n🚀 Servidor corriendo en http://localhost:${PORT}`);
-  console.log(`📊 Ambiente: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🌐 Frontend permitido: ${process.env.FRONTEND_URL}\n`);
+app.listen(env.port, () => {
+  console.log(`🚗 CEA AMC API escuchando en el puerto ${env.port}`);
 });
 
 export default app;

@@ -1,135 +1,66 @@
-import { Request, Response, NextFunction } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
-import { createError } from '../middleware/errorHandler';
 
-// GET /api/licenses
-export const getLicenses = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
+export async function listLicenses(_req: Request, res: Response, next: NextFunction) {
   try {
-    const { gradeId, minPrice, maxPrice, search, active } = req.query;
-
-    const where: Record<string, unknown> = {};
-
-    if (active !== 'false') where.active = true; // Por defecto solo activas
-    if (gradeId) where.gradeId = String(gradeId);
-    if (minPrice || maxPrice) {
-      where.price = {};
-      if (minPrice) (where.price as Record<string, unknown>).gte = parseFloat(String(minPrice));
-      if (maxPrice) (where.price as Record<string, unknown>).lte = parseFloat(String(maxPrice));
-    }
-    if (search) {
-      where.OR = [
-        { name: { contains: String(search), mode: 'insensitive' } },
-        { description: { contains: String(search), mode: 'insensitive' } },
-      ];
-    }
-
     const licenses = await prisma.license.findMany({
-      where,
-      include: { grade: true, prerequisite: { select: { id: true, name: true } } },
-      orderBy: [{ grade: { order: 'asc' } }, { price: 'asc' }],
+      where: { activo: true },
+      orderBy: { precioTotal: 'asc' },
     });
-
-    res.json(licenses);
+    return res.json({ licenses });
   } catch (err) {
-    next(err);
+    return next(err);
   }
-};
+}
 
-// GET /api/licenses/:id
-export const getLicenseById = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
+export async function getLicense(req: Request, res: Response, next: NextFunction) {
   try {
-    const license = await prisma.license.findUnique({
-      where: { id: req.params.id },
-      include: {
-        grade: true,
-        prerequisite: { include: { grade: true } },
-        dependents: { select: { id: true, name: true } },
-      },
-    });
-
-    if (!license) throw createError('Licencia no encontrada', 404);
-    res.json(license);
+    const license = await prisma.license.findUnique({ where: { id: req.params.id } });
+    if (!license) {
+      return res.status(404).json({ error: 'Licencia no encontrada' });
+    }
+    return res.json({ license });
   } catch (err) {
-    next(err);
+    return next(err);
   }
-};
+}
 
-// POST /api/licenses
-export const createLicense = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
+export async function createLicense(req: Request, res: Response, next: NextFunction) {
   try {
-    const {
-      name, description, price, durationDays, gradeId,
-      benefits, requirements, syllabus, prerequisiteId, imageUrl,
-    } = req.body;
-
-    const license = await prisma.license.create({
-      data: {
-        name, description, price, durationDays, gradeId,
-        benefits, requirements, syllabus, prerequisiteId, imageUrl,
-      },
-      include: { grade: true },
-    });
-
-    res.status(201).json({ message: 'Licencia creada', license });
+    const existing = await prisma.license.findUnique({ where: { codigo: req.body.codigo } });
+    if (existing) {
+      return res.status(409).json({ error: 'Ya existe una licencia con ese código' });
+    }
+    const license = await prisma.license.create({ data: req.body });
+    return res.status(201).json({ license });
   } catch (err) {
-    next(err);
+    return next(err);
   }
-};
+}
 
-// PUT /api/licenses/:id
-export const updateLicense = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
+export async function updateLicense(req: Request, res: Response, next: NextFunction) {
   try {
-    const { id } = req.params;
-    const data = req.body;
-
-    // Remove undefined/null keys
-    Object.keys(data).forEach((k) => data[k] === undefined && delete data[k]);
-
-    const license = await prisma.license.update({
-      where: { id },
-      data,
-      include: { grade: true },
-    });
-
-    res.json({ message: 'Licencia actualizada', license });
+    const existing = await prisma.license.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Licencia no encontrada' });
+    }
+    const license = await prisma.license.update({ where: { id: req.params.id }, data: req.body });
+    return res.json({ license });
   } catch (err) {
-    next(err);
+    return next(err);
   }
-};
+}
 
-// DELETE /api/licenses/:id
-export const deleteLicense = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
+export async function deleteLicense(req: Request, res: Response, next: NextFunction) {
   try {
-    const { id } = req.params;
-
-    // Soft delete — desactivar en lugar de eliminar
-    await prisma.license.update({
-      where: { id },
-      data: { active: false },
-    });
-
-    res.json({ message: 'Licencia desactivada' });
+    const existing = await prisma.license.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Licencia no encontrada' });
+    }
+    // Borrado lógico para no romper inscripciones históricas
+    await prisma.license.update({ where: { id: req.params.id }, data: { activo: false } });
+    return res.json({ mensaje: 'Licencia desactivada correctamente' });
   } catch (err) {
-    next(err);
+    return next(err);
   }
-};
+}

@@ -1,215 +1,216 @@
-import { PrismaClient, Role } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const prisma = new PrismaClient();
 
+const licenses = [
+  {
+    codigo: 'A2',
+    nombre: 'A2 – Motocicletas',
+    descripcion:
+      'Licencia para conducción de motocicletas, motociclos y mototriciclos de cualquier cilindraje.',
+    precioCurso: 578000,
+    precioMedico: 245000,
+    precioLicenciaTransito: 177000,
+    precioTotal: 1000000,
+    horasTeoria: 25,
+    horasTaller: 3,
+    horasPractica: 15,
+    horasTotal: 43,
+    requisitos: 'Ser mayor de 16 años. Documento de identidad. Saber leer y escribir.',
+  },
+  {
+    codigo: 'B1',
+    nombre: 'B1 – Vehículo particular',
+    descripcion:
+      'Licencia para conducción de automóviles, camperos, camionetas y microbuses de servicio particular.',
+    precioCurso: 928000,
+    precioMedico: 245000,
+    precioLicenciaTransito: 177000,
+    precioTotal: 1350000,
+    horasTeoria: 25,
+    horasTaller: 5,
+    horasPractica: 20,
+    horasTotal: 50,
+    requisitos: 'Ser mayor de 18 años. Documento de identidad. Saber leer y escribir.',
+  },
+  {
+    codigo: 'C1',
+    nombre: 'C1 – Servicio público y particular',
+    descripcion:
+      'Licencia para conducción de automóviles, camperos, camionetas y microbuses de servicio público y particular.',
+    precioCurso: 1378000,
+    precioMedico: 245000,
+    precioLicenciaTransito: 177000,
+    precioTotal: 1800000,
+    horasTeoria: 30,
+    horasTaller: 5,
+    horasPractica: 30,
+    horasTotal: 65,
+    requisitos: 'Ser mayor de 18 años. Documento de identidad. Saber leer y escribir.',
+  },
+  {
+    codigo: 'RC1',
+    nombre: 'RC1 – Recategorización a C1',
+    descripcion:
+      'Recategorización de licencia B1 a C1 para conducción de vehículos de servicio público.',
+    precioCurso: 928000,
+    precioMedico: 245000,
+    precioLicenciaTransito: 177000,
+    precioTotal: 1350000,
+    horasTeoria: 5,
+    horasTaller: 0,
+    horasPractica: 10,
+    horasTotal: 15,
+    requisitos: 'Tener licencia B1 vigente registrada en el RUNT. Ser mayor de 18 años.',
+  },
+  {
+    codigo: 'RC2',
+    nombre: 'RC2 – Vehículos pesados',
+    descripcion:
+      'Recategorización para conducción de vehículos pesados (camiones rígidos, busetas y buses).',
+    precioCurso: 1578000,
+    precioMedico: 245000,
+    precioLicenciaTransito: 177000,
+    precioTotal: 2000000,
+    horasTeoria: 20,
+    horasTaller: 10,
+    horasPractica: 15,
+    horasTotal: 45,
+    requisitos: 'Tener licencia C1 vigente registrada en el RUNT. Ser mayor de 18 años.',
+  },
+];
+
+const combos = [
+  {
+    nombre: 'Combo A2 + B1',
+    descripcion: 'Licencia de motocicleta A2 y vehículo particular B1 en un solo paquete.',
+    codigos: ['A2', 'B1'],
+    precioCurso: 1506000,
+    precioMedico: 335000,
+    precioTransito: 354000,
+    precioTotal: 2195000,
+  },
+  {
+    nombre: 'Combo A2 + C1',
+    descripcion: 'Licencia de motocicleta A2 y servicio público C1 en un solo paquete.',
+    codigos: ['A2', 'C1'],
+    precioCurso: 1956000,
+    precioMedico: 335000,
+    precioTransito: 354000,
+    precioTotal: 2645000,
+  },
+  {
+    nombre: 'Combo A2 + C2',
+    descripcion:
+      'Licencia de motocicleta A2 y recategorización a vehículos pesados (C2) en un solo paquete.',
+    codigos: ['A2', 'RC2'],
+    precioCurso: 2156000,
+    precioMedico: 335000,
+    precioTransito: 354000,
+    precioTotal: 2845000,
+  },
+];
+
+const services = [
+  {
+    nombre: 'Pruebas de idoneidad (A2, B1, C1, RC2)',
+    descripcion:
+      'Evaluación teórica y práctica de idoneidad para las categorías A2, B1, C1 y RC2.',
+  },
+  {
+    nombre: 'Capacitación en seguridad vial',
+    descripcion: 'Cursos y talleres de capacitación en seguridad vial para empresas y particulares.',
+  },
+  {
+    nombre: 'Clases de refuerzo',
+    descripcion: 'Clases prácticas adicionales de refuerzo para estudiantes que lo requieran.',
+  },
+];
+
 async function main() {
-  console.log('🌱 Iniciando seed de la base de datos...');
+  console.log('🌱 Iniciando seed...');
 
-  // =============================================
-  // 1. GRADOS DE ESPECIALIZACIÓN
-  // =============================================
-  const gradeBasico = await prisma.specializationGrade.upsert({
-    where: { name: 'Básico' },
-    update: {},
-    create: {
-      name: 'Básico',
-      description: 'Nivel de entrada. Fundamentos esenciales para iniciar en el área.',
-      order: 1,
-      color: '#10b981',
-    },
-  });
+  for (const license of licenses) {
+    await prisma.license.upsert({
+      where: { codigo: license.codigo },
+      update: license,
+      create: license,
+    });
+    console.log(`  ✔ Licencia ${license.codigo}`);
+  }
 
-  const gradeIntermedio = await prisma.specializationGrade.upsert({
-    where: { name: 'Intermedio' },
-    update: {},
-    create: {
-      name: 'Intermedio',
-      description: 'Conocimientos sólidos y aplicación práctica de conceptos avanzados.',
-      order: 2,
-      color: '#6366f1',
-    },
-  });
+  for (const combo of combos) {
+    const { codigos, ...data } = combo;
+    const comboLicenses = await prisma.license.findMany({
+      where: { codigo: { in: codigos } },
+    });
 
-  const gradeAvanzado = await prisma.specializationGrade.upsert({
-    where: { name: 'Avanzado' },
-    update: {},
-    create: {
-      name: 'Avanzado',
-      description: 'Dominio técnico profundo y gestión de proyectos complejos.',
-      order: 3,
-      color: '#f59e0b',
-    },
-  });
+    const existing = await prisma.combo.findFirst({ where: { nombre: data.nombre } });
+    if (existing) {
+      await prisma.combo.update({
+        where: { id: existing.id },
+        data: {
+          ...data,
+          licenses: {
+            deleteMany: {},
+            create: comboLicenses.map((l) => ({ licenseId: l.id })),
+          },
+        },
+      });
+    } else {
+      await prisma.combo.create({
+        data: {
+          ...data,
+          licenses: {
+            create: comboLicenses.map((l) => ({ licenseId: l.id })),
+          },
+        },
+      });
+    }
+    console.log(`  ✔ ${data.nombre}`);
+  }
 
-  const gradeExperto = await prisma.specializationGrade.upsert({
-    where: { name: 'Experto' },
-    update: {},
-    create: {
-      name: 'Experto',
-      description: 'Máximo nivel de especialización. Liderazgo estratégico y consultoría.',
-      order: 4,
-      color: '#ef4444',
-    },
-  });
+  for (const service of services) {
+    const existing = await prisma.additionalService.findFirst({
+      where: { nombre: service.nombre },
+    });
+    if (existing) {
+      await prisma.additionalService.update({ where: { id: existing.id }, data: service });
+    } else {
+      await prisma.additionalService.create({ data: service });
+    }
+    console.log(`  ✔ Servicio: ${service.nombre}`);
+  }
 
-  console.log('✅ Grados creados');
+  const adminEmail = process.env.ADMIN_EMAIL;
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (adminEmail && adminPassword) {
+    const hashed = await bcrypt.hash(adminPassword, 10);
+    await prisma.user.upsert({
+      where: { email: adminEmail },
+      update: { role: 'admin' },
+      create: {
+        nombre: 'Administrador CEA AMC',
+        email: adminEmail,
+        password: hashed,
+        role: 'admin',
+      },
+    });
+    console.log(`  ✔ Usuario admin: ${adminEmail}`);
+  } else {
+    console.warn('  ⚠ ADMIN_EMAIL / ADMIN_PASSWORD no definidos; no se creó usuario admin.');
+  }
 
-  // =============================================
-  // 2. LICENCIAS
-  // =============================================
-  const licBasica = await prisma.license.upsert({
-    where: { id: 'lic-basica-001' },
-    update: {},
-    create: {
-      id: 'lic-basica-001',
-      name: 'Certificación Profesional Básica',
-      description:
-        'Licencia de nivel básico que acredita el conocimiento de fundamentos esenciales. Ideal para quienes inician su carrera profesional.',
-      price: 49.99,
-      durationDays: 365,
-      gradeId: gradeBasico.id,
-      benefits: [
-        'Acceso a materiales de formación básica',
-        'Insignia digital verificable',
-        'Soporte por email 48h',
-        'Validez de 1 año',
-        'Certificado descargable en PDF',
-      ],
-      syllabus:
-        '## Módulo 1: Fundamentos\n- Conceptos básicos y terminología\n- Marco de referencia profesional\n\n## Módulo 2: Aplicación\n- Casos prácticos básicos\n- Herramientas fundamentales',
-      requirements: 'Sin requisitos previos',
-      imageUrl: null,
-      active: true,
-    },
-  });
-
-  const licIntermedia = await prisma.license.upsert({
-    where: { id: 'lic-intermedia-001' },
-    update: {},
-    create: {
-      id: 'lic-intermedia-001',
-      name: 'Certificación Profesional Intermedia',
-      description:
-        'Licencia intermedia que certifica habilidades prácticas y conocimientos técnicos en el área de especialización.',
-      price: 129.99,
-      durationDays: 365,
-      gradeId: gradeIntermedio.id,
-      prerequisiteId: licBasica.id,
-      benefits: [
-        'Todos los beneficios del nivel Básico',
-        'Acceso a proyectos prácticos intermedios',
-        'Soporte prioritario 24h',
-        'Networking con comunidad de profesionales',
-        'Validez de 1 año con renovación especial',
-      ],
-      syllabus:
-        '## Módulo 1: Profundización técnica\n- Metodologías avanzadas\n- Gestión de proyectos\n\n## Módulo 2: Trabajo en equipo\n- Colaboración interdisciplinaria\n- Comunicación efectiva\n\n## Módulo 3: Aplicaciones prácticas\n- Casos de estudio reales\n- Ejercicios supervisados',
-      requirements: 'Requiere: Certificación Profesional Básica vigente',
-      imageUrl: null,
-      active: true,
-    },
-  });
-
-  const licAvanzada = await prisma.license.upsert({
-    where: { id: 'lic-avanzada-001' },
-    update: {},
-    create: {
-      id: 'lic-avanzada-001',
-      name: 'Certificación Profesional Avanzada',
-      description:
-        'Licencia avanzada para profesionales con experiencia sólida. Certifica dominio técnico y capacidad de liderazgo en proyectos complejos.',
-      price: 249.99,
-      durationDays: 730,
-      gradeId: gradeAvanzado.id,
-      prerequisiteId: licIntermedia.id,
-      benefits: [
-        'Todos los beneficios del nivel Intermedio',
-        'Acceso a laboratorios avanzados',
-        'Mentoría mensual con expertos',
-        'Inclusión en directorio de profesionales certificados',
-        'Validez de 2 años',
-        'Descuento en renovación del 25%',
-      ],
-      syllabus:
-        '## Módulo 1: Arquitectura y diseño\n- Patrones de diseño avanzados\n- Arquitectura de soluciones\n\n## Módulo 2: Liderazgo técnico\n- Gestión de equipos\n- Mentoring y coaching\n\n## Módulo 3: Innovación\n- Tendencias emergentes\n- I+D aplicado\n\n## Módulo 4: Gestión estratégica\n- Planificación a largo plazo\n- Métricas de éxito',
-      requirements: 'Requiere: Certificación Profesional Intermedia vigente',
-      imageUrl: null,
-      active: true,
-    },
-  });
-
-  await prisma.license.upsert({
-    where: { id: 'lic-experta-001' },
-    update: {},
-    create: {
-      id: 'lic-experta-001',
-      name: 'Certificación Profesional Experta',
-      description:
-        'El máximo nivel de certificación. Para líderes y consultores que requieren el más alto grado de reconocimiento en su área de especialización.',
-      price: 499.99,
-      durationDays: 730,
-      gradeId: gradeExperto.id,
-      prerequisiteId: licAvanzada.id,
-      benefits: [
-        'Todos los beneficios del nivel Avanzado',
-        'Título de "Experto Certificado" en la plataforma',
-        'Acceso a eventos exclusivos y conferencias',
-        'Prioridad en oportunidades laborales de la red',
-        'Soporte VIP dedicado',
-        'Validez de 2 años con renovación gratuita el primer año',
-        'Co-autoría en publicaciones de la plataforma',
-      ],
-      syllabus:
-        '## Módulo 1: Consultoría estratégica\n- Metodología de consultoría\n- Gestión de clientes corporativos\n\n## Módulo 2: Investigación aplicada\n- Diseño de investigaciones\n- Publicación de resultados\n\n## Módulo 3: Liderazgo organizacional\n- Transformación digital\n- Change management\n\n## Módulo 4: Ecosistema profesional\n- Construcción de marca personal\n- Expansión internacional',
-      requirements: 'Requiere: Certificación Profesional Avanzada vigente',
-      imageUrl: null,
-      active: true,
-    },
-  });
-
-  console.log('✅ Licencias creadas');
-
-  // =============================================
-  // 3. USUARIOS
-  // =============================================
-  const adminPass = await bcrypt.hash('Admin123!', 12);
-  const userPass = await bcrypt.hash('User123!', 12);
-
-  await prisma.user.upsert({
-    where: { email: 'admin@licencias.com' },
-    update: {},
-    create: {
-      email: 'admin@licencias.com',
-      password: adminPass,
-      name: 'Administrador',
-      phone: '+573001234567',
-      role: Role.ADMIN,
-    },
-  });
-
-  await prisma.user.upsert({
-    where: { email: 'usuario@licencias.com' },
-    update: {},
-    create: {
-      email: 'usuario@licencias.com',
-      password: userPass,
-      name: 'Juan Pérez',
-      phone: '+573009876543',
-      role: Role.USER,
-    },
-  });
-
-  console.log('✅ Usuarios creados');
-  console.log('\n🎉 Seed completado exitosamente!\n');
-  console.log('Credenciales de prueba:');
-  console.log('  Admin  → admin@licencias.com   / Admin123!');
-  console.log('  Usuario → usuario@licencias.com / User123!\n');
+  console.log('✅ Seed completado.');
 }
 
 main()
   .catch((e) => {
-    console.error('❌ Error en seed:', e);
+    console.error(e);
     process.exit(1);
   })
   .finally(async () => {

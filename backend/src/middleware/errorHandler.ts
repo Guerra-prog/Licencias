@@ -1,33 +1,15 @@
-import { Request, Response, NextFunction } from 'express';
+import { NextFunction, Request, Response } from 'express';
+import { HttpError } from '../utils/httpError';
+import { env } from '../config/env';
 
-export interface AppError extends Error {
-  statusCode?: number;
-}
-
-export const errorHandler = (
-  err: AppError,
-  _req: Request,
-  res: Response,
-  _next: NextFunction
-): void => {
-  const statusCode = err.statusCode || 500;
-  const message =
-    process.env.NODE_ENV === 'production' && statusCode === 500
-      ? 'Error interno del servidor'
-      : err.message || 'Error interno del servidor';
-
-  console.error(`[ERROR] ${statusCode}: ${err.message}`);
-  if (process.env.NODE_ENV !== 'production') {
-    console.error(err.stack);
+export function errorHandler(err: Error, _req: Request, res: Response, _next: NextFunction) {
+  if (err instanceof HttpError) {
+    return res.status(err.statusCode).json({ error: err.message });
   }
 
-  res.status(statusCode).json({
-    error: message,
+  console.error(err);
+  return res.status(500).json({
+    error: 'Error interno del servidor',
+    ...(env.nodeEnv === 'development' ? { detalle: err.message } : {}),
   });
-};
-
-export const createError = (message: string, statusCode: number): AppError => {
-  const error: AppError = new Error(message);
-  error.statusCode = statusCode;
-  return error;
-};
+}

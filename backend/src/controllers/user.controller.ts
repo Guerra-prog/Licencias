@@ -1,124 +1,65 @@
-import { Response, NextFunction } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../utils/prisma';
-import { AuthRequest } from '../middleware/auth.middleware';
-import { createError } from '../middleware/errorHandler';
 
-// GET /api/users/me
-export const getMe = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
+const ADMIN_USER_SELECT = {
+  id: true,
+  nombre: true,
+  email: true,
+  telefono: true,
+  documentoIdentidad: true,
+  role: true,
+  activo: true,
+  fechaRegistro: true,
+  fotoPerfilUrl: true,
+} as const;
+
+export async function listUsers(_req: Request, res: Response, next: NextFunction) {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user!.id },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        role: true,
-        createdAt: true,
-        _count: {
-          select: { userLicenses: true, purchases: true },
-        },
-      },
+    const users = await prisma.user.findMany({
+      select: ADMIN_USER_SELECT,
+      orderBy: { fechaRegistro: 'desc' },
     });
-
-    if (!user) throw createError('Usuario no encontrado', 404);
-    res.json(user);
+    return res.json({ users });
   } catch (err) {
-    next(err);
+    return next(err);
   }
-};
+}
 
-// PUT /api/users/me
-export const updateMe = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
+export async function updateUser(req: Request, res: Response, next: NextFunction) {
   try {
-    const { name, phone, currentPassword, newPassword } = req.body;
-
-    const updateData: Record<string, unknown> = {};
-    if (name) updateData.name = name;
-    if (phone !== undefined) updateData.phone = phone;
-
-    // Cambio de contraseña
-    if (currentPassword && newPassword) {
-      const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
-      if (!user) throw createError('Usuario no encontrado', 404);
-
-      const valid = await bcrypt.compare(currentPassword, user.password);
-      if (!valid) throw createError('Contraseña actual incorrecta', 400);
-
-      updateData.password = await bcrypt.hash(newPassword, 12);
+    const existing = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
-    const updated = await prisma.user.update({
-      where: { id: req.user!.id },
-      data: updateData,
-      select: { id: true, name: true, email: true, phone: true, role: true },
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: req.body,
+      select: ADMIN_USER_SELECT,
     });
-
-    res.json({ message: 'Perfil actualizado', user: updated });
+    return res.json({ user });
   } catch (err) {
-    next(err);
+    return next(err);
   }
-};
+}
 
-// GET /api/users/me/licenses
-export const getMyLicenses = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
+export async function createAdminUser(req: Request, res: Response, next: NextFunction) {
   try {
-    const licenses = await prisma.userLicense.findMany({
-      where: { userId: req.user!.id },
-      include: {
-        license: {
-          include: { grade: true },
-        },
-      },
-      orderBy: { issuedAt: 'desc' },
+    const { nombre, email, password, telefono, documentoIdentidad } = req.body;
+
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return res.status(409).json({ error: 'Ya existe una cuenta con este email' });
+    }
+
+    const hashed = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+      data: { nombre, email, password: hashed, telefono, documentoIdentidad, role: 'admin' },
+      select: ADMIN_USER_SELECT,
     });
-
-    const now = new Date();
-    const result = licenses.map((ul) => ({
-      ...ul,
-      status: ul.expiresAt > now ? 'ACTIVE' : 'EXPIRED',
-      daysUntilExpiry: Math.ceil(
-        (ul.expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-      ),
-    }));
-
-    res.json(result);
+    return res.status(201).json({ user });
   } catch (err) {
-    next(err);
+    return next(err);
   }
-};
-
-// GET /api/users/me/orders
-export const getMyOrders = async (
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const orders = await prisma.purchase.findMany({
-      where: { userId: req.user!.id },
-      include: {
-        license: { include: { grade: true } },
-        userLicense: { select: { code: true, expiresAt: true, pdfUrl: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    res.json(orders);
-  } catch (err) {
-    next(err);
-  }
-};
+}

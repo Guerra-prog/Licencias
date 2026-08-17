@@ -1,34 +1,55 @@
 import { Router } from 'express';
-import * as AdminController from '../controllers/admin.controller';
-import { authenticate, requireAdmin } from '../middleware/auth.middleware';
+import * as licenseController from '../controllers/license.controller';
+import * as comboController from '../controllers/combo.controller';
+import * as serviceController from '../controllers/service.controller';
+import * as enrollmentController from '../controllers/enrollment.controller';
+import * as userController from '../controllers/user.controller';
+import { requireAuth, requireAdmin } from '../middleware/auth.middleware';
+import { validateBody } from '../middleware/validate';
+import {
+  licenseSchema,
+  licenseUpdateSchema,
+  comboSchema,
+  comboUpdateSchema,
+  serviceSchema,
+  serviceUpdateSchema,
+} from '../validators/catalog.validators';
+import {
+  updateEnrollmentSchema,
+  updateUserSchema,
+  createAdminUserSchema,
+} from '../validators/enrollment.validators';
 
 const router = Router();
 
-// Todas las rutas admin requieren autenticación + rol ADMIN
-router.use(authenticate, requireAdmin);
+router.use(requireAuth, requireAdmin);
 
-// GET /api/admin/users
-router.get('/users', AdminController.getUsers);
+// Licencias
+router.post('/licenses', validateBody(licenseSchema), licenseController.createLicense);
+router.put('/licenses/:id', validateBody(licenseUpdateSchema), licenseController.updateLicense);
+router.delete('/licenses/:id', licenseController.deleteLicense);
 
-// PUT /api/admin/users/:id
-router.put('/users/:id', AdminController.updateUser);
+// Combos
+router.post('/combos', validateBody(comboSchema), comboController.createCombo);
+router.put('/combos/:id', validateBody(comboUpdateSchema), comboController.updateCombo);
+router.delete('/combos/:id', comboController.deleteCombo);
 
-// GET /api/admin/reports
-router.get('/reports', AdminController.getSalesReport);
+// Servicios adicionales
+router.post('/services', validateBody(serviceSchema), serviceController.createService);
+router.put('/services/:id', validateBody(serviceUpdateSchema), serviceController.updateService);
+router.delete('/services/:id', serviceController.deleteService);
 
-// GET /api/admin/conversations
-router.get('/conversations', AdminController.getConversations);
+// Inscripciones
+router.get('/enrollments', enrollmentController.listEnrollments);
+router.put(
+  '/enrollments/:id',
+  validateBody(updateEnrollmentSchema),
+  enrollmentController.updateEnrollment
+);
 
-// GET /api/admin/conversations/:id
-router.get('/conversations/:id', AdminController.getConversationMessages);
-
-// POST /api/admin/conversations/:id/reply — responder un mensaje de WhatsApp
-router.post('/conversations/:id/reply', AdminController.replyToConversation);
-
-// GET /api/admin/licenses — todas (incluyendo inactivas)
-router.get('/licenses', AdminController.getAllLicenses);
-
-// GET /api/admin/expiring-soon — licencias próximas a vencer
-router.get('/expiring-soon', AdminController.getExpiringSoon);
+// Usuarios
+router.get('/users', userController.listUsers);
+router.post('/users', validateBody(createAdminUserSchema), userController.createAdminUser);
+router.put('/users/:id', validateBody(updateUserSchema), userController.updateUser);
 
 export default router;
